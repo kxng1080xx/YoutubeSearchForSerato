@@ -76,7 +76,7 @@ from serato_crate import (
     sync_youtube_crate,
     tag_audio_file,
 )
-from yt_engine import FFMPEG_EXE, download_youtube_track, sanitize_filename, search_youtube
+from yt_engine import FFMPEG_EXE, download_youtube_track, sanitize_filename, search_youtube, suggest_next
 
 
 WIDTH = 480
@@ -348,6 +348,20 @@ class SearchWorker(QThread):
             self.failed.emit(self.token, str(e))
 
 
+class SuggestWorker(SearchWorker):
+    """Same signals as SearchWorker, so results land in the same list."""
+
+    def __init__(self, token: int, seed: Dict, base_dir: Path):
+        super().__init__(token, "", base_dir)
+        self.seed = seed
+
+    def run(self):
+        try:
+            self.done.emit(self.token, suggest_next(self.seed, base_dir=self.base_dir))
+        except Exception as e:
+            self.failed.emit(self.token, str(e))
+
+
 class DownloadWorker(QThread):
     progress = pyqtSignal(str, float)
     finished_ok = pyqtSignal(str, str)
@@ -472,7 +486,9 @@ class ResultRow(QWidget):
         text_w = WIDTH - 12 - 10 - 10 - 62 - 24
         fm_t = self.title.fontMetrics()
         self.title.setText(fm_t.elidedText(data.get("title") or "", Qt.TextElideMode.ElideRight, text_w))
-        sub = " • ".join(x for x in (data.get("artist") or "", format_duration(data.get("duration") or 0)) if x)
+        sub = " • ".join(
+            x for x in (data.get("mix_hint") or "", data.get("artist") or "", format_duration(data.get("duration") or 0)) if x
+        )
         self.sub.setText(self.sub.fontMetrics().elidedText(sub, Qt.TextElideMode.ElideRight, text_w))
 
         self.set_state("ready" if self.is_ready() else "idle")
@@ -503,7 +519,7 @@ class ResultsList(QListWidget):
     """Dropdown list. Instant download on mouse-down; drag a ready row = native file drop (CF_HDROP)."""
 
     row_pressed = pyqtSignal(QListWidgetItem)
-    track_drag_completed = pyqtSignal()
+    track_drag_completed = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -552,7 +568,7 @@ class ResultsList(QListWidget):
         p.end()
         drag.setPixmap(pix)
         drag.exec(Qt.DropAction.CopyAction)
-        self.track_drag_completed.emit()
+        self.track_drag_completed.emit(row.data)
 
 
 # ---------------------------------------------------------------- overlay
@@ -666,6 +682,15 @@ class Overlay(QWidget):
         self.status = QLabel("")
         self.status.setStyleSheet("color:#8B90A0; font-size:11px; background:transparent;")
         bar.addWidget(self.status)
+
+        self.next_btn = QPushButton("⏭")
+        self.next_btn.setObjectName("iconBtn")
+        self.next_btn.setFixedSize(24, 24)
+        self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.next_btn.setToolTip("What to play next - drag a track onto a deck first")
+        self.next_btn.setEnabled(False)
+        self.next_btn.clicked.connect(self.start_suggest)
+        bar.addWidget(self.next_btn)
 
         self.crate_tag = QPushButton()
         self.crate_tag.setObjectName("smallBtn")
@@ -903,12 +928,16 @@ class Overlay(QWidget):
             self.a_startup.setChecked(checked)
             self.a_startup.blockSignals(False)
 
-    def on_track_drag_completed(self):
+    def on_track_drag_completed(self, data: Dict):
         """
         Called right when the user releases the mouse after dragging a song onto a deck.
         Clears the search box (leaving the results dropdown visible) and returns keyboard
         focus to Serato / VirtualDJ.
         """
+        self._now_playing = data
+        title = data.get("title") or "this track"
+        self.next_btn.setEnabled(True)
+        self.next_btn.setToolTip(f"What to play after: {title}")
         if self.clear_search_on_drop():
             self.search.clear()
         if self.focus_dj_on_drop():
@@ -932,6 +961,19 @@ class Overlay(QWidget):
         self._search_token += 1
         self.status.setText("searching…")
         w = SearchWorker(self._search_token, q, self.base_dir())
+        w.done.connect(self.on_results)
+        w.failed.connect(self.on_search_failed)
+        w.finished.connect(lambda w=w: self._search_workers.remove(w) if w in self._search_workers else None)
+        self._search_workers.append(w)
+        w.start()
+
+    def start_suggest(self):
+        seed = getattr(self, "_now_playing", None)
+        if not seed:
+            return
+        self._search_token += 1
+        self.status.setText("finding next…")
+        w = SuggestWorker(self._search_token, seed, self.base_dir())
         w.done.connect(self.on_results)
         w.failed.connect(self.on_search_failed)
         w.finished.connect(lambda w=w: self._search_workers.remove(w) if w in self._search_workers else None)

@@ -11,6 +11,9 @@ try:
 except Exception:
     FFMPEG_EXE = shutil.which("ffmpeg")
 
+from mutagen.id3 import ID3
+from mutagen.mp4 import MP4
+
 from serato_crate import (
     YOUTUBE_DIR,
     clean_youtube_artist_title,
@@ -47,6 +50,7 @@ def search_youtube(
     query: str,
     max_results: int = 15,
     base_dir: Optional[Path] = None,
+    playlist_limit: Optional[int] = None,
 ) -> List[Dict]:
     """
     Search YouTube or resolve a pasted YouTube Video / Playlist URL.
@@ -66,6 +70,9 @@ def search_youtube(
         "skip_download": True,
         "ignoreerrors": True,
     }
+    if playlist_limit:
+        # YouTube Mixes are endless; without this yt-dlp pages ~1000 entries.
+        ydl_opts.update(playlistend=playlist_limit, lazy_playlist=True)
 
     existing_map = get_existing_video_map(base_dir)
     results: List[Dict] = []
@@ -234,3 +241,104 @@ def download_youtube_track(
         progress_callback(100.0, "Ready")
 
     return final_file
+
+
+# ---------------------------------------------------------------- suggestions
+#
+# "What to play next", the VirtualDJ way minus the crowd data: candidates come
+# from YouTube's own Mix for the seed track (similar music), plus local tracks,
+# then anything Serato has analysed (BPM in `tmpo`, key in `initialkey`) is
+# ranked by how well it mixes with the seed.
+
+_NOTE = {"C": 0, "C#": 1, "DB": 1, "D": 2, "D#": 3, "EB": 3, "E": 4, "F": 5, "F#": 6,
+         "GB": 6, "G": 7, "G#": 8, "AB": 8, "A": 9, "A#": 10, "BB": 10, "B": 11}
+# Camelot number for each pitch class: major keys are "B", minor keys "A".
+_CAMELOT_MAJOR = {0: 8, 7: 9, 2: 10, 9: 11, 4: 12, 11: 1, 6: 2, 1: 3, 8: 4, 3: 5, 10: 6, 5: 7}
+_CAMELOT_MINOR = {9: 8, 4: 9, 11: 10, 6: 11, 1: 12, 8: 1, 3: 2, 10: 3, 5: 4, 0: 5, 7: 6, 2: 7}
+
+
+def to_camelot(key: str) -> Optional[tuple]:
+    """'Cm' / 'F#' / 'Bbm' / 'A minor' / '8A' -> (8, 'A'); None if unreadable."""
+    k = (key or "").strip().upper().replace("♯", "#").replace("♭", "B")
+    m = re.fullmatch(r"(\d{1,2})([AB])", k)
+    if m:
+        return int(m.group(1)), m.group(2)
+    m = re.fullmatch(r"([A-G][#B]?)\s*(M|MIN|MINOR|MAJ|MAJOR)?", k)
+    if not m or m.group(1) not in _NOTE:
+        return None
+    pc = _NOTE[m.group(1)]
+    minor = m.group(2) in ("M", "MIN", "MINOR")
+    return (_CAMELOT_MINOR[pc], "A") if minor else (_CAMELOT_MAJOR[pc], "B")
+
+
+def keys_compatible(a: tuple, b: tuple) -> bool:
+    """Same key, one step round the wheel, or relative major/minor."""
+    (na, la), (nb, lb) = a, b
+    if la == lb:
+        return (na - nb) % 12 in (0, 1, 11)
+    return na == nb
+
+
+def bpm_compatible(a: float, b: float, tolerance: float = 0.06) -> bool:
+    """Within ±6%, or at half/double time."""
+    return any(abs(a * f - b) <= b * tolerance for f in (1.0, 0.5, 2.0))
+
+
+def read_mix_info(file_path: str) -> tuple:
+    """(bpm, camelot) from the tags Serato writes after analysing a track."""
+    bpm, key = 0.0, None
+    try:
+        p = Path(file_path)
+        if p.suffix.lower() == ".m4a":
+            tags = MP4(str(p)).tags or {}
+            if tags.get("tmpo"):
+                bpm = float(tags["tmpo"][0])
+            raw = tags.get("----:com.apple.iTunes:initialkey")
+            if raw:
+                key = to_camelot(bytes(raw[0]).decode("utf-8", "ignore"))
+        elif p.suffix.lower() == ".mp3":
+            tags = ID3(str(p))
+            if tags.get("TBPM"):
+                bpm = float(str(tags["TBPM"].text[0]))
+            if tags.get("TKEY"):
+                key = to_camelot(str(tags["TKEY"].text[0]))
+    except Exception:
+        pass
+    return bpm, key
+
+
+def suggest_next(seed: Dict, base_dir: Optional[Path] = None, limit: int = 25) -> List[Dict]:
+    """
+    Tracks to play after `seed` (a result dict with an id and, once downloaded,
+    a file_path). Mixable ones first, each tagged with a `mix_hint` like
+    "✓ 100 BPM · 5A"; the rest keep YouTube's Mix order.
+    """
+    seed_id = seed.get("id") or ""
+    candidates: List[Dict] = []
+    if len(seed_id) == 11:
+        mix_url = f"https://www.youtube.com/watch?v={seed_id}&list=RD{seed_id}"
+        candidates = search_youtube(mix_url, base_dir=base_dir, playlist_limit=limit + 1)
+
+    seen = {seed_id} | {c.get("id") for c in candidates}
+    candidates = [c for c in candidates if c.get("id") != seed_id]
+    # Your own library counts too, as long as it is known to mix.
+    local = [t for t in read_local_youtube_tracks(base_dir) if t.get("id") not in seen]
+
+    seed_bpm, seed_key = read_mix_info(seed.get("file_path") or "")
+
+    def rank(item: Dict) -> int:
+        if not item.get("file_path"):
+            return 0
+        bpm, key = read_mix_info(item["file_path"])
+        bpm_ok = bool(seed_bpm and bpm and bpm_compatible(bpm, seed_bpm))
+        key_ok = bool(seed_key and key and keys_compatible(key, seed_key))
+        if bpm_ok or key_ok:
+            parts = [f"{bpm:.0f} BPM" if bpm else "", f"{key[0]}{key[1]}" if key else ""]
+            item["mix_hint"] = "✓ " + " · ".join(x for x in parts if x)
+        return 2 * bpm_ok + key_ok
+
+    scored = [(rank(c), i, c) for i, c in enumerate(candidates)]
+    scored += [(s, len(candidates) + i, t) for i, t in enumerate(local) if (s := rank(t))]
+    # Stable: best mix score first, otherwise YouTube's order.
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [c for _, _, c in scored[:limit]]

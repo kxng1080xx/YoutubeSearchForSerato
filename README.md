@@ -5,6 +5,18 @@ download it as tagged audio into `~/Music/YouTube`, then drag it onto a
 Serato or VirtualDJ deck. Downloads are added to a `YouTube` crate in
 `~/Music/_Serato_/Subcrates`.
 
+## What to play next (⏭)
+
+After you drag a track onto a deck, ⏭ lists what to play after it:
+
+- Candidates come from YouTube's own Mix for that track, plus your
+  downloaded tracks.
+- Tracks Serato has analysed are checked against the one you played.
+  Same tempo (±6%, or half/double time) or a compatible key on the
+  Camelot wheel go to the top, marked like `✓ 100 BPM · 5A`.
+- Ranking only uses BPM and key that Serato has already written into the
+  files, so it gets better the more of your library Serato has analysed.
+
 ## Windows
 
 Run `SeratoYouTube.exe`, or `Launch Serato YouTube.bat` from source.
