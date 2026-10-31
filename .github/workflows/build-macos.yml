@@ -11,8 +11,17 @@ permissions:
 
 jobs:
   build:
-    # Apple Silicon. For Intel Macs add an Intel runner to a matrix.
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel   # Intel Macs
+            arch: intel
+          - runner: macos-latest     # Apple Silicon
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      ZIP: SeratoYouTube-macOS-${{ matrix.arch }}.zip
     steps:
       - uses: actions/checkout@v4
 
@@ -34,16 +43,19 @@ jobs:
             --collect-data imageio_ffmpeg \
             app.py
 
+      - name: Check architecture
+        run: file dist/SeratoYouTube.app/Contents/MacOS/SeratoYouTube
+
       - name: Zip (ditto keeps the bundle's symlinks and permissions)
-        run: ditto -c -k --keepParent dist/SeratoYouTube.app SeratoYouTube-macOS-arm64.zip
+        run: ditto -c -k --keepParent dist/SeratoYouTube.app "$ZIP"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: SeratoYouTube-macOS-arm64
-          path: SeratoYouTube-macOS-arm64.zip
+          name: SeratoYouTube-macOS-${{ matrix.arch }}
+          path: ${{ env.ZIP }}
 
       - name: Attach to release (tags only)
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" SeratoYouTube-macOS-arm64.zip --generate-notes || gh release upload "$GITHUB_REF_NAME" SeratoYouTube-macOS-arm64.zip --clobber
+        run: gh release create "$GITHUB_REF_NAME" "$ZIP" --generate-notes || gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber

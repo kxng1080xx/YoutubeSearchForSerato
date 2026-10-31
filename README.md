@@ -14,8 +14,10 @@ Build: `pyinstaller SeratoYouTube.spec`
 
 ## macOS
 
-Download `SeratoYouTube-macOS-arm64.zip` from the latest
-[Actions run](../../actions) (or a release), unzip, and move
+Download the zip for your Mac from the latest
+[Actions run](../../actions) (or a release): `SeratoYouTube-macOS-intel.zip`
+for Intel Macs, `SeratoYouTube-macOS-arm64.zip` for Apple Silicon (M1 and
+later). Unzip and move
 `SeratoYouTube.app` to Applications.
 
 The app is not signed, so the first launch needs one of:
@@ -31,4 +33,4 @@ Differences from Windows:
 - "Open at Login" writes `~/Library/LaunchAgents/com.seratoyoutube.overlay.plist`.
 
 The build runs on GitHub Actions (`.github/workflows/build-macos.yml`) on
-every push to `main`. It targets Apple Silicon.
+every push to `main`, for both Intel and Apple Silicon.
