@@ -7,7 +7,7 @@ Serato or VirtualDJ deck. Downloads are added to a `YouTube` crate in
 
 ## What to play next (Next ▸)
 
-Click **Next ▸** in the bar to see what to play after the track you last dragged onto a deck (or, if you have not dragged one yet, the highlighted result):
+When you drop a track onto a deck, the list switches to what to play next and the bar shows `next after: <track>`. **Next ▸** does the same on demand (for the highlighted result if you have not dragged one yet):
 
 - Candidates come from YouTube's own Mix for that track, plus your
   downloaded tracks.

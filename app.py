@@ -939,6 +939,8 @@ class Overlay(QWidget):
             self.search.clear()
         if self.focus_dj_on_drop():
             QTimer.singleShot(60, focus_window_under_cursor)
+        # Like VirtualDJ's suggestions: the list becomes "what to play next".
+        QTimer.singleShot(150, self.start_suggest)
 
     def _set_results_height(self):
         n = self.results.count()
@@ -975,6 +977,8 @@ class Overlay(QWidget):
             self.status.setText("pick a track first")
             return
         self._search_token += 1
+        self._suggest_token = self._search_token
+        self._suggest_title = seed.get("title") or ""
         self.status.setText("finding next…")
         w = SuggestWorker(self._search_token, seed, self.base_dir())
         w.done.connect(self.on_results)
@@ -987,6 +991,8 @@ class Overlay(QWidget):
         if token != self._search_token:
             return
         self.status.setText("" if items else "no results")
+        if items and token == getattr(self, "_suggest_token", None):
+            self.status.setText(f"next after: {self._suggest_title[:18]}")
         self.results.clear()
         self._rows.clear()
         for data in items:

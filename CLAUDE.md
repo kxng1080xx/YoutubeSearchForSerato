@@ -46,7 +46,7 @@ Last updated: 2026-10-31
 2. **macOS builds** on GitHub Actions for Intel (`macos-15-intel`, the main
    target) and Apple Silicon. Both pass; arch verified with `file`; ffmpeg
    (imageio-ffmpeg) is bundled. Minimum macOS is **13 Ventura**, set by PyQt6 6.11.
-3. **"What to play next" (Next ▸ button).** Always visible; seeds from the last track dragged onto a deck, else the highlighted result.
+3. **"What to play next" (Next ▸ button).** Runs automatically right after a deck drop (status shows `next after: <title>`); the always-visible button reruns it, seeding from the last dragged track, else the highlighted result.
    - Candidates: YouTube's Mix for that video (`watch?v=ID&list=RDID`) plus local tracks.
    - Ranking: BPM and key that Serato has written into the files
      (`tmpo`, `----:com.apple.iTunes:initialkey`; ID3 `TBPM`/`TKEY`),
