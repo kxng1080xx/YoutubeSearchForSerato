@@ -683,12 +683,10 @@ class Overlay(QWidget):
         self.status.setStyleSheet("color:#8B90A0; font-size:11px; background:transparent;")
         bar.addWidget(self.status)
 
-        self.next_btn = QPushButton("⏭")
-        self.next_btn.setObjectName("iconBtn")
-        self.next_btn.setFixedSize(24, 24)
+        self.next_btn = QPushButton("Next ▸")
+        self.next_btn.setObjectName("smallBtn")
         self.next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.next_btn.setToolTip("What to play next - drag a track onto a deck first")
-        self.next_btn.setEnabled(False)
+        self.next_btn.setToolTip("What to play next: after the track you last dragged to a deck, or the highlighted result")
         self.next_btn.clicked.connect(self.start_suggest)
         bar.addWidget(self.next_btn)
 
@@ -936,7 +934,6 @@ class Overlay(QWidget):
         """
         self._now_playing = data
         title = data.get("title") or "this track"
-        self.next_btn.setEnabled(True)
         self.next_btn.setToolTip(f"What to play after: {title}")
         if self.clear_search_on_drop():
             self.search.clear()
@@ -970,6 +967,12 @@ class Overlay(QWidget):
     def start_suggest(self):
         seed = getattr(self, "_now_playing", None)
         if not seed:
+            # Nothing dragged from the overlay yet: use the highlighted result.
+            item = self.results.currentItem()
+            row = self.results.row_widget(item) if item else None
+            seed = row.data if row else None
+        if not seed:
+            self.status.setText("pick a track first")
             return
         self._search_token += 1
         self.status.setText("finding next…")

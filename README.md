@@ -5,9 +5,9 @@ download it as tagged audio into `~/Music/YouTube`, then drag it onto a
 Serato or VirtualDJ deck. Downloads are added to a `YouTube` crate in
 `~/Music/_Serato_/Subcrates`.
 
-## What to play next (⏭)
+## What to play next (Next ▸)
 
-After you drag a track onto a deck, ⏭ lists what to play after it:
+Click **Next ▸** in the bar to see what to play after the track you last dragged onto a deck (or, if you have not dragged one yet, the highlighted result):
 
 - Candidates come from YouTube's own Mix for that track, plus your
   downloaded tracks.
